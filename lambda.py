@@ -30,7 +30,6 @@ class Lamb:
     def removeRename(name):
         return name.split('$')[0]
     #recursive
-    # TODO FIX 
     def rename(self, params = None):
         if params == None:
             params = {}
