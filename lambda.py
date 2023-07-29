@@ -3,7 +3,6 @@ import re
 class Lamb:
     showDisambiguationInString = False
     simplifyLambdaInString = True
-    showRawRename = True
     sessionUniqueId = 0
     def __init__(self, paramsOrOther = None, body = None, parent = None):
         if isinstance(paramsOrOther, str):
@@ -172,7 +171,7 @@ class Lamb:
             #!print("decomposeCall")
             return (True, self.body + list(args)[argIdx:])
     #weird operator precedence
-    def staticEval(self, definitions, sequential = True, debug = False, depth = 0):
+    def staticEval(self, definitions, sequential = True, debug = True, depth = 0):
         # try going opposite
         #!print("STARTeval", self)
         turn = 0
@@ -248,8 +247,8 @@ class Lamb:
     # strongly binding, left aligned
     @classmethod
     def lexLambda(cls, text):
-        modified_text = text.replace('{','')
-        modified_text = modified_text.replace('}','')
+        modified_text = text.replace('{','(')
+        modified_text = modified_text.replace('}',')')
         modified_text = modified_text.replace('->','.')
         modified_text = modified_text.replace('=>','.')
         words = re.split(r'([ ().\\])', modified_text.strip())
@@ -327,11 +326,19 @@ class LambInterpreter:
         "succ"   : Lamb(r'\n f x -> f (n f x)'),
         "pred"   : Lamb(r'\n f x -> n (\g h -> h (g f)) (\u -> x) (\u -> u)'),
         
+        "if"     : Lamb(r'\cond body other -> cond body other'),
+        "else"   : Lamb(r'\body -> body')
         "add"    : Lamb(r'\m n f x -> m f (n f x)'),
         "mul"    : Lamb(r'\m n f x -> m (n f) x'),
         
-        "Ycomb"  : Lamb(r'\f -> (\x -> f(x x))(\x -> f(x x))') 
+        "Ycomb"  : Lamb(r'\f -> (\x -> f(x x))(\x -> f(x x))'),
+        "fact"   : Lamb(r'Ycomb (\f n -> (iszero n) 1 (mul n (f (pred n))))')
     }
+    
+    """
+    """
+    compareToPrevious = True
+    
     def __init__(self):
         Lamb.sessionUniqueId = 0
         self.sessionOutput = ""
@@ -377,19 +384,26 @@ class LambInterpreter:
             # final item, whether it's a assignment statement (a = \db.c), or an expression \f. succ 1
             l = r'\ ->' + eq[-1] # dummy parent
             #print(l)
-            result = Lamb(l) 
-            #print(result)
-            #print(result)
-            result.staticEval(self.sessionDefinitions) # can't
+            result = Lamb(l)
             result.simplify()
+            #print(result)
+            resultCopy = Lamb(result)
+            try:
+                result.staticEval(self.sessionDefinitions) # can't
+                result.simplify()
+            except Exception:
+                print("RESULT DID NOT CONVERGE")
+                result = resultCopy
             
-            for k, v in self.sessionDefinitions.items():
-                if v.functionalEquivalence(result):
-                    print("EQUIVALENT TO", k)
-                    
             if len(eq) == 2:
                 self.sessionDefinitions.update({eq[0] : result})
                 out += eq[0] + " = "
+            
+            if(LambInterpreter.compareToPrevious):
+                for k, v in self.sessionDefinitions.items():
+                    if v.functionalEquivalence(result):
+                        print("EQUIVALENT TO", k)
+            
             if len(result.params) == 0:
                 for r in result.body:
                     out += str(r) + " "
@@ -412,7 +426,7 @@ class LambInterpreter:
         while(True):
             """for k, v in self.demo_definitions.items():
                 print(k, ':', v)"""
-            if(inp.strip() != ''): 
+            if(inp.strip() != ''):
                 print()
                 print('-*' * 30)
                 print("Enter phrase to evaluate")
@@ -425,6 +439,7 @@ HELP - LIST OF USEFUL COMMANDS
 -- exit - exits the program
 -- help - prints all available commands
 -- clear - clears all previous session info
+-- definitions - print all definitions
 -- settings - toggles lambda output modes
                       
 -- Reserved strings: {, }, (, ), , \\, =, ==, ~, ->, =>, ., \\n 
@@ -438,19 +453,25 @@ HELP - LIST OF USEFUL COMMANDS
 """)
             elif(inp == 'clear'):
                 self.clearSession()
-            elif (inp == 'demo'): # deprecated
-                print("-- PLACEHOLDER")
+            elif (inp == 'definitions'): # deprecated
+                for k, v in self.sessionDefinitions.items():
+                    print(k, ':', v)
             elif(inp == 'settings'):
                 settingsInp = ''
                 while(settingsInp != 'e'):
+                    print("-- (c)ompare expression to all previous definitions =", str(LambInterpreter.compareToPrevious), 
+                       "\n\tWARNING, can slow down computer")
                     print("-- (d)isambiguated/renamed names shown = ", Lamb.showDisambiguationInString)
                     print("-- (s)implified lambda print format = ", Lamb.simplifyLambdaInString)
-                    print('-- Type d or s to toggle either, and e to exit')
+                    print('-- Type c, d, or s to toggle either, and e to exit')
                     settingsInp = input(">>")
-                    if(settingsInp == 'd'):
+                    if(settingsInp == 'c'):
+                        LambInterpreter.compareToPrevious = not LambInterpreter.compareToPrevious
+                    elif(settingsInp == 'd'):
                         Lamb.showDisambiguationInString = not Lamb.showDisambiguationInString
                     elif(settingsInp == 's'):
                         Lamb.simplifyLambdaInString = not Lamb.simplifyLambdaInString
+                    
                     print("--" * 30)
             elif (inp.strip() == ''):
                 pass
