@@ -389,6 +389,9 @@ class LambInterpreter:
     def interpret(self, text):
         def cleanSplit(text, pattern):
             return [t.strip() for t in text.split(pattern) if t.strip() != '']
+        def logprint(text):
+            print(text)
+            self.sessionOutput += text + '\n'
         out = ''
         modified_text = text.replace('{','')
         modified_text = modified_text.replace('}','')
@@ -399,7 +402,6 @@ class LambInterpreter:
         #print(lines)
         # TODO add comparison
         for line in lines:
-            
             eq = cleanSplit(line, '=')
             # final item, whether it's a assignment statement (a = \db.c), or an expression \f. succ 1
             l = r'\ ->' + eq[-1] # dummy parent
@@ -412,7 +414,7 @@ class LambInterpreter:
                 result.staticEval(self.sessionDefinitions) # can't
                 result.simplify()
             except Exception:
-                print("RESULT DID NOT CONVERGE")
+                logprint("RESULT DID NOT CONVERGE")
                 result = resultCopy
             
             if len(eq) == 2:
@@ -422,21 +424,17 @@ class LambInterpreter:
             if(LambInterpreter.compareToPrevious):
                 for k, v in self.sessionDefinitions.items():
                     if v.functionalEquivalence(result):
-                        print("EQUIVALENT TO", k)
+                        logprint("EQUIVALENT TO " + str(k))
                 numberEquivalent = result.numberDetector()
                 if numberEquivalent != None:
-                    print("CORRESPONDING NUMERICAL VALUE:", numberEquivalent)
+                    logprint("CORRESPONDING NUMERICAL VALUE: " + str(numberEquivalent))
             if len(result.params) == 0:
                 for r in result.body:
                     out += str(r) + " "
             else:
                 out += str(result)
-            
-                
             out += '\n'
-            
-        self.sessionOutput += out
-        return out
+            logprint('-- ' + str(out))
     
     def interpreter_console(self):
         inp = 'help'
@@ -462,6 +460,7 @@ HELP - LIST OF USEFUL COMMANDS
 -- help - prints all available commands
 -- clear - clears all previous session info
 -- definitions - print all definitions
+-- session - prints all previous expression outputs in current session
 -- settings - toggles lambda output modes
                       
 -- Reserved strings: {, }, (, ), , \\, =, ==, ~, ->, =>, ., \\n 
@@ -474,10 +473,15 @@ HELP - LIST OF USEFUL COMMANDS
 --    eg. (\\f x -> x)(f false)
 """)
             elif(inp == 'clear'):
+                print('CLEARED SESSION')
                 self.clearSession()
             elif (inp == 'definitions'): # deprecated
+                print('DEFINITIONS')
                 for k, v in self.sessionDefinitions.items():
                     print(k, ':', v)
+            elif (inp == 'session'):
+                print('SESSION OUTPUT')
+                print(self.sessionOutput)
             elif(inp == 'settings'):
                 settingsInp = ''
                 while(settingsInp != 'e'):
@@ -497,8 +501,8 @@ HELP - LIST OF USEFUL COMMANDS
                     print("--" * 30)
             elif (inp.strip() == ''):
                 pass
-            else:
-                print('--', self.interpret(inp))
+            else: # prints output of expression
+                self.interpret(inp)
                 self.resetRename()
     demo_definitions = {
         "0"      : Lamb(r'\f x -> x'),
@@ -544,7 +548,7 @@ HELP - LIST OF USEFUL COMMANDS
         "eq"     : Lamb(r'\m n -> (leq m n) (geq m n) false'),
         
         "Ycomb"  : Lamb(r'\f -> (\x -> f (x x))(\x -> f (x x)'),
-        "fact"   : Lamb(r'\g n -> ifelse (iszero n) 1 ( mul n (g (pred n)))'), # if n==0: 1 else: n * g(n-1) 
+        "fact"   : Lamb(r'Ycomb (\g n -> ifelse (iszero n) 1 ( mul n (g (pred n))))'), # if n==0: 1 else: n * g(n-1) 
         
         "pair"   : Lamb(r'\x y fun -> fun x y'),
         "first"  : Lamb(r'true'),
