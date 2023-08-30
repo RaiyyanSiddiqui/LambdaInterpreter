@@ -68,6 +68,35 @@ class Lamb:
     def __repr__(self):
         return self.__str__()
     
+    def numberDetector(self):
+        if len(self.params) != 2:
+            return None
+        elif len(self.body) > 2:
+            return None
+        
+        paramOne = self.params[0]
+        paramTwo = self.params[1]
+        
+        def numberDetectorRecur(la):
+            if len(la.body) == 1 and isinstance(la.body[0], str) and la.body[0] == paramTwo: # x
+                return 0
+            elif len(la.body) == 2 and isinstance(la.body[0], str) and la.body[0] == paramOne: # f ...
+                if isinstance(la.body[1], str) and la.body[1] == paramTwo:
+                    return 1
+                elif isinstance(la.body[1], Lamb):
+                    res = numberDetectorRecur(la.body[1])
+                    #print(la.body[1], "-> res ->", res)
+                    if res == None:
+                        return None
+                    else:
+                        return 1 + res
+                else:
+                    return None
+            else:
+                return None
+        # now call the declared helper function
+        return numberDetectorRecur(self)
+
     def functionalEquivalence(self, other, sParamScope = None, oParamScope = None):
         def findIndex(scope, item):
             for scIdx, sc in enumerate(scope):
@@ -171,7 +200,7 @@ class Lamb:
             #!print("decomposeCall")
             return (True, self.body + list(args)[argIdx:])
     #weird operator precedence
-    def staticEval(self, definitions, sequential = True, debug = True, depth = 0):
+    def staticEval(self, definitions, sequential = True, debug = False, depth = 0):
         # try going opposite
         #!print("STARTeval", self)
         turn = 0
@@ -193,7 +222,7 @@ class Lamb:
             simplifyChanged = self.simplify()
             changedSingleTurn = changedSingleTurn or simplifyChanged
             while startingIdx < len(self.body) and isinstance(self.body[startingIdx], str) :
-                if not sequential: return False
+                if not sequential: return changedSingleTurn or changedAtAll # OR FALSE
                 startingIdx += 1
                 continue
             if startingIdx == len(self.body):
@@ -225,7 +254,15 @@ class Lamb:
         finalSimp = self.simplify()
         #!print(self,'done\n', 'turn',turn, 'sidx', startingIdx, 'len', len(self.body), 'changed', changedAtAll, 'finalSimp', finalSimp)
         return changedAtAll or finalSimp
-        
+    def precedenceGroup(self):
+        changed = False
+        # a b c d -> ((a b) c ) d
+        while len(self.body) > 2:
+            inner = Lamb()
+            inner.body = [self.body[0], self.body[1]]
+            self.body = [inner] + self.body[2:]
+            changed = True
+        return changed
     def simplify(self):
         # inner lambda
         #print('simp', self)
@@ -242,6 +279,7 @@ class Lamb:
             if isinstance(b, Lamb):
                 res = b.simplify()
                 changed = changed or res
+        self.precedenceGroup() # changed this doesn't matter
         return changed
     # returns lambda
     # strongly binding, left aligned
@@ -261,12 +299,14 @@ class Lamb:
     # assume properly formed line
     @classmethod
     def compileLambda(cls, text):
+        #print('call compile', text)
         tokens = cls.lexLambda(text)
-        lState = 'args'
-        root = Lamb()
+        lState = 'body'
+        root = Lamb() #the root should be a dummy parent, 
+        #print('tokens',tokens)
         #print(tokens)
         try:
-            for t in tokens:
+            for idx, t in enumerate(tokens):
                 #print(t)
                 if(t == '('):
                     new_root = Lamb([], [], root)
@@ -294,12 +334,18 @@ class Lamb:
                     #print(root)
                     root.params.append(t)
                 elif (lState == 'body'):
-                    #print('body')
-                    #print(root)
+                    #the root should be a dummy parent, 
+                    #so if just plain text, the root is set as dummy
+                    if idx == 0:
+                        new_root = Lamb([], [], root)
+                        root.body.append(new_root)
+                        root = new_root
                     root.body.append(t)
+            #print(root.parent)
             while root.parent != None:
                 root = root.parent
             # or the root ## WILL CHANGE
+            #print('root',root)
             return root.body[0]
         except:
             print("ERROR: compiling lambda.")
@@ -307,33 +353,7 @@ class Lamb:
             
             
 class LambInterpreter:
-    demo_definitions = {
-        "true"   : Lamb(r'\a b -> a'),
-        "false"  : Lamb(r'\a b -> b'),
-        "0"      : Lamb(r'\f x -> x'),
-        "1"      : Lamb(r'\f x -> f x'),
-        "2"      : Lamb(r'\f x -> f (f x)'),
-        "3"      : Lamb(r'\f x -> f(f(f x))'),
-        "4"      : Lamb(r'\f x -> f(f(f(f x)))'),
-        "5"      : Lamb(r'\f x -> f(f(f(f(f x))))'),
-        "6"      : Lamb(r'\f x -> f(f(f(f(f(f x)))))'),
-        "7"      : Lamb(r'\f x -> f(f(f(f(f(f(f x))))))'),
-        "8"      : Lamb(r'\f x -> f(f(f(f(f(f(f(f x)))))))'),
-        "9"      : Lamb(r'\f x -> f(f(f(f(f(f(f(f(f x))))))))'),
-        "10"     : Lamb(r'\f x -> f(f(f(f(f(f(f(f(f(f x)))))))))'),
-        
-        "iszero" : Lamb(r'\n -> n (\z -> false) true'),
-        "succ"   : Lamb(r'\n f x -> f (n f x)'),
-        "pred"   : Lamb(r'\n f x -> n (\g h -> h (g f)) (\u -> x) (\u -> u)'),
-        
-        "if"     : Lamb(r'\cond body other -> cond body other'),
-        "else"   : Lamb(r'\body -> body')
-        "add"    : Lamb(r'\m n f x -> m f (n f x)'),
-        "mul"    : Lamb(r'\m n f x -> m (n f) x'),
-        
-        "Ycomb"  : Lamb(r'\f -> (\x -> f(x x))(\x -> f(x x))'),
-        "fact"   : Lamb(r'Ycomb (\f n -> (iszero n) 1 (mul n (f (pred n))))')
-    }
+    
     
     """
     """
@@ -403,7 +423,9 @@ class LambInterpreter:
                 for k, v in self.sessionDefinitions.items():
                     if v.functionalEquivalence(result):
                         print("EQUIVALENT TO", k)
-            
+                numberEquivalent = result.numberDetector()
+                if numberEquivalent != None:
+                    print("CORRESPONDING NUMERICAL VALUE:", numberEquivalent)
             if len(result.params) == 0:
                 for r in result.body:
                     out += str(r) + " "
@@ -478,7 +500,59 @@ HELP - LIST OF USEFUL COMMANDS
             else:
                 print('--', self.interpret(inp))
                 self.resetRename()
-
+    demo_definitions = {
+        "0"      : Lamb(r'\f x -> x'),
+        "1"      : Lamb(r'\f x -> f x'),
+        "2"      : Lamb(r'\f x -> f (f x)'),
+        "3"      : Lamb(r'\f x -> f(f(f x))'),
+        "4"      : Lamb(r'\f x -> f(f(f(f x)))'),
+        "5"      : Lamb(r'\f x -> f(f(f(f(f x))))'),
+        "6"      : Lamb(r'\f x -> f(f(f(f(f(f x)))))'),
+        "7"      : Lamb(r'\f x -> f(f(f(f(f(f(f x))))))'),
+        "8"      : Lamb(r'\f x -> f(f(f(f(f(f(f(f x)))))))'),
+        "9"      : Lamb(r'\f x -> f(f(f(f(f(f(f(f(f x))))))))'),
+        "10"     : Lamb(r'\f x -> f(f(f(f(f(f(f(f(f(f x)))))))))'),
+        
+        "true"   : Lamb(r'\a b -> a'),
+        "false"  : Lamb(r'\a b -> b'),
+        
+        "ifelse" : Lamb(r'\cond body other -> cond body other'),
+        "nothing": Lamb(r'\x -> x'),
+        
+        "not"    : Lamb(r'\a -> a false true'),
+        "and"    : Lamb(r'\a b -> a b false'),
+        "or"     : Lamb(r'\a b -> a true b'),
+        "xor"    : Lamb(r'\a b -> a (not b) b'),
+        
+        "iszero" : Lamb(r'\n -> n (\z -> false) true'),
+        "succ"   : Lamb(r'\n f x -> f (n f x)'),
+        "pred"   : Lamb(r'\n f x -> n (\g h -> h (g f)) (\u -> x) (\u -> u)'),
+        
+        "add"    : Lamb(r'\m n f x -> m f (n f x)'),
+        "mul"    : Lamb(r'\m n f x -> m (n f) x'),
+        "sub"    : Lamb(r'\m n f x -> n pred m f x'),
+        # n==0 -> 0 divby0 check then: g num res -> if num < n: res else: g(num - n, res + 1) given num=m and res=0
+        #DEPRECATED"divrecur": Lamb(r'\n num res -> (\g num res -> ifelse (lt num n) (res f x) (g (sub num n) (succ res)) )'),
+        #DEPRECATED"div"    : Lamb(r'\m n f x -> ifelse (iszero n) (0 f x) (Ycomb (divrecur n) m 0 )'),
+        "div"    : Lamb(r'\m n f x -> ifelse (iszero n) (0 f x) (Ycomb (\g num res -> ifelse (lt num n) (res f x) (g (sub num n) (succ res)) ) m 0)'),
+        "exp"    : Lamb(r'\m n f x -> n m f x'),
+        
+        "lt"     : Lamb(r'\m n -> iszero (sub (succ(m)) n)'), # TRUE: lt 3 4 -> iszero((3 + 1) - 4)
+        "gt"     : Lamb(r'\m n -> iszero (sub (succ(n)) m)'), # TRUE: gt 4 3 -> iszero((3 + 1) - 4)
+        "leq"    : Lamb(r'\m n -> iszero (sub m n)'), # TRUE: (3 3) -> 3 - 3, (3 4) -> 3 - 4
+        "geq"    : Lamb(r'\m n -> iszero (sub n m)'), # TRUE: (3 3) -> 3 - 3, (4 3) -> 3 - 4
+        "eq"     : Lamb(r'\m n -> (leq m n) (geq m n) false'),
+        
+        "Ycomb"  : Lamb(r'\f -> (\x -> f (x x))(\x -> f (x x)'),
+        "fact"   : Lamb(r'\g n -> ifelse (iszero n) 1 ( mul n (g (pred n)))'), # if n==0: 1 else: n * g(n-1) 
+        
+        "pair"   : Lamb(r'\x y fun -> fun x y'),
+        "first"  : Lamb(r'true'),
+        "second" : Lamb(r'false'),
+        "NIL"    : Lamb(r'\x -> true'),
+        "NULL"   : Lamb(r'\p -> p (\x y -> false)'),
+        
+    }
 
 
 if __name__ == '__main__':
